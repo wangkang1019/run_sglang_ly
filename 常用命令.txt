@@ -1,0 +1,72 @@
+SGLang 常用命令
+==============
+
+进入仓库目录（以下命令都在此目录执行）
+--------------------------------------
+cd run_sglang_ly
+
+启动模型服务（双卡 TP=2，默认端口 30001）
+-------------------------------------------
+./start_sglang_2gpu.sh /root/models/Qwen3.8-27B
+
+首次启动会在后台从 ModelScope 下载 Qwen/Qwen3.8-27B（默认 4 路并发），下载完成且模型文件检查通过后自动启动服务。模型目录不完整时，再运行同一命令会续传/重试缺失文件。模型在容器临时盘上，容器或 Pod 重建后可能需要重新下载。
+
+查看下载、启动和运行日志
+------------------------
+tail -f logs/runner.log logs/server.log
+
+停止模型服务或正在进行的下载
+----------------------------
+./stop_sglang_2gpu.sh
+
+重启模型服务
+------------
+./stop_sglang_2gpu.sh
+./start_sglang_2gpu.sh /root/models/Qwen3.8-27B
+
+检查 HTTP 健康状态（返回 HTTP 200 表示服务已就绪）
+--------------------------------------------------
+curl --noproxy '*' -sS -o /dev/null -w 'HTTP %{http_code}\n' http://127.0.0.1:30001/health
+
+查看两张卡的利用率和显存
+------------------------
+nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total --format=csv
+
+持续查看 GPU 状态（每 2 秒刷新）
+--------------------------------
+watch -n 2 nvidia-smi
+
+查看服务进程
+------------
+cat .sglang-run/supervisor.pid
+pgrep -af 'sglang_keepalive|ms-hub|sglang serve'
+
+查看最近日志
+------------
+tail -n 50 logs/runner.log
+tail -n 50 logs/server.log
+
+查看启动脚本参数
+----------------
+./start_sglang_2gpu.sh --help
+
+修改 HTTP 端口（例：30002）
+---------------------------
+SGLANG_HTTP_PORT=30002 ./start_sglang_2gpu.sh /root/models/Qwen3.8-27B
+
+常用环境变量
+------------
+MODELSCOPE_MODEL_ID=owner/name   指定 ModelScope 模型仓库，默认 Qwen/Qwen3.8-27B
+MODELSCOPE_MAX_WORKERS=4         下载并发数，默认 4
+TARGET_GPU_UTIL=60               两卡平均利用率目标，默认 60%
+MAX_CONCURRENCY=16               请求并发上限，默认 16
+MAX_TOKENS=256                   每个合成请求的最大生成 token 数，默认 256
+
+注意事项
+--------
+- SGLang/Torch 使用系统 Python；ModelScope 的 ms-hub 默认从 /root/miniconda3/envs/sglang/bin/ms-hub 运行。
+- 如 ms-hub 在其他位置，设置 MODELSCOPE_CLI=/实际路径/ms-hub。
+- 不要把 HTTP 端口设置到 SGLANG_PORT；SGLang 用它分配内部通信端口。
+- 若端口占用，换一个 SGLANG_HTTP_PORT，并将健康检查 URL 改成相同端口。
+- 服务默认监听 0.0.0.0，未配置 API 鉴权；仅按容器平台网络策略开放端口。
+- 断开 SSH 不会停止后台程序；容器/Pod 被停止或回收时服务会结束。
